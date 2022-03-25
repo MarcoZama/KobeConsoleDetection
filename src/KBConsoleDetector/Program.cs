@@ -1,4 +1,5 @@
 ﻿using KBConsoleDetector;
+using Microsoft.ML;
 using System.Drawing;
 
 class Program
@@ -10,10 +11,9 @@ class Program
     private static readonly (float x, float y)[] boxAnchors = { (0.573f, 0.677f), (1.87f, 2.06f), (3.34f, 5.47f), (7.88f, 3.53f), (9.77f, 9.17f) };
 
 
-    private static string[] testFiles = new[] { 
-        "C:\\Users\\marco\\Pictures\\Game\\.png",
-        "C:\\Users\\marco\\Pictures\\Game\\.png",
-        "C:\\Users\\marco\\Pictures\\Game\\.png"
+    private static string[] testFiles = new[] {
+        "C:\\Users\\marco\\Pictures\\Game\\game04851.png",
+
     };
 
     static void Main(string[] args)
@@ -21,11 +21,27 @@ class Program
         Bitmap testImage;
 
         // code
+        var context = new MLContext();
 
+        var emptyDate = new List<OnnxInput>();
+
+        var data = context.Data.LoadFromEnumerable(emptyDate);
+
+        var pipeline = context.Transforms.ResizeImages(
+            resizing: Microsoft.ML.Transforms.Image.ImageResizingEstimator.ResizingKind.Fill, outputColumnName: "data",
+            imageWidth: ImageSettings.imageWidth,
+            imageHeight: ImageSettings.imageHeight,
+            inputColumnName: nameof(OnnxInput.ImagePath))
+            .Append(context.Transforms.ExtractPixels(outputColumnName: "data"))
+            .Append(context.Transforms.ApplyOnnxModel(modelFile: "./Models/model.onnx",
+            outputColumnName: "model_outputs0", inputColumnName: "data"));
+
+        var model = pipeline.Fit(data);
+        var predictionEngine = context.Model.CreatePredictionEngine<OnnxInput, OnnxOutput>(model);
+
+        var labels = File.ReadAllLines("./Models/labels.txt");
 
         // end code
-
-    
 
         foreach (var image in testFiles)
         {
@@ -34,9 +50,11 @@ class Program
                 testImage = (Bitmap)Image.FromStream(stream);
             }
 
+            // code
             var prediction = predictionEngine.Predict(new OnnxInput { ImagePath = testImage });
-
-            var boundingBoxes = ParseOutputs(prediction.DetectedBoxes, labels);
+            var boundingBoxes = ParseOutputs(prediction.DetectBoxes, labels);
+            // end code
+           
 
             var originalWidth = testImage.Width;
             var originalHeight = testImage.Height;
